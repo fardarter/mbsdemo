@@ -1,0 +1,36 @@
+parameters:
+  - name: terraformVersion
+    type: string
+    default: "latest"
+  - name: tf_path
+    type: string
+  - name: infra_deployment_sp
+    type: string
+    default: ""
+  - name: backend_type
+    type: string
+    default: "local"
+  - name: storage_subscription_id
+    type: string
+    default: ""
+
+steps:
+  - task: TerraformInstaller@1
+    name: install_terraform
+    displayName: "Install terraform (version: ${{ parameters.terraformVersion }})"
+    inputs:
+      terraformVersion: ${{ parameters.terraformVersion }}
+  - task: TerraformCLI@1
+    displayName: "terraform init"
+    name: terraform_init
+    inputs:
+      command: "init"
+      backendType: "${{ parameters.backend_type }}"
+      ${{ if eq(parameters.backend_type, 'local') }}:
+        commandOptions: "-backend=false"
+      ${{ if eq(parameters.backend_type, 'azurerm') }}:
+        backendServiceArm: "${{ parameters.infra_deployment_sp }}"
+      workingDirectory: "$(System.DefaultWorkingDirectory)/${{ parameters.tf_path }}"
+      allowTelemetryCollection: false
+      ${{ if ne(parameters.storage_subscription_id, '') }}:
+        backendAzureRmSubscriptionId: "${{ parameters.storage_subscription_id }}"

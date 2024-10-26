@@ -1,0 +1,8 @@
+steps:
+  - checkout: self
+    clean: true
+    submodules: true
+    ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+      persistCredentials: true
+    fetchTags: true
+    fetchDepth: 3

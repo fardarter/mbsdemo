@@ -1,0 +1,117 @@
+trigger: none
+pr: none # in azure devops, this is configured by build validation.
+
+pool:
+  name: t0-medium
+  demands:
+    - ImageOverride -equals ubuntu-22.04
+
+stages:
+  - stage: linting_and_validation
+    displayName: "linting and validation"
+    jobs:
+      - job: lint_and_validate
+        displayName: "tf validate"
+        strategy:
+          matrix:
+            nonprod:
+              tf_path: "environments/nonprod/terraform"
+        steps:
+          - template: templates/checkout.yaml
+          - template: templates/terraform-init.yaml
+            parameters:
+              tf_path: $(tf_path)
+          - task: TerraformCLI@1
+            displayName: "terraform validate"
+            inputs:
+              command: "validate"
+              workingDirectory: "$(System.DefaultWorkingDirectory)/$(tf_path)"
+              allowTelemetryCollection: false
+          - task: TerraformCLI@1
+            displayName: "Lint: terraform fmt -recursive -check"
+            condition: always()
+            inputs:
+              command: "fmt"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              commandOptions: "-recursive -check"
+              allowTelemetryCollection: false
+      - job: static_analysis
+        dependsOn:
+          - lint_and_validate
+        displayName: "Linting and static analysis"
+        steps:
+          - template: templates/checkout.yaml
+          - task: Bash@3
+            condition: always()
+            displayName: "Tfsec - Static Analysis"
+            inputs:
+              targetType: "inline"
+              script: |
+                docker pull aquasec/tfsec:latest
+                docker run --rm --volume $(System.DefaultWorkingDirectory):/src aquasec/tfsec:latest /src --include-ignored --include-passed --format 'JUnit' > tfsec-junit.xml
+                retVal=$?
+                cat tfsec-junit.xml
+                echo ""
+                echo "Tfsec - Static Analysis complete. Please use 'make tfsec' command to run locally for more detailed output."
+                retVal=$?
+                if [ $retVal -ne 0 ]; then
+                  exit $retVal
+                fi
+          - task: Bash@3
+            condition: always()
+            displayName: "Terrascan - Static Analysis"
+            inputs:
+              targetType: "inline"
+              script: |
+                docker pull tenable/terrascan:latest
+                docker run --rm --volume $(System.DefaultWorkingDirectory):/iac --workdir /iac tenable/terrascan scan --show-passed -t azure -i terraform -o junit-xml > terrascan-junit.xml
+                # See error codes docs -- we care about violations but not errors: https://runterrascan.io/docs/_print/#configuring-the-output-format-for-a-scan
+                status=$?
+                cat terrascan-junit.xml
+                echo \n
+                echo "Terrascan - Static Analysis complete. Please use 'make terrascan' command to run locally for more detailed output."
+                codes_url='https://runterrascan.io/docs/_print/#configuring-the-output-format-for-a-scan'
+                if [ $status -eq 1 ]; then
+                  echo "Only violations fail -- scan command errors out due to invalid inputs. Original code: $status (see $codes_url)" 
+                  exit 1;
+                elif [ $status -eq 3 ]; then
+                  echo "Only violations fail -- scan summary has violations but no errors. Original code: $status (see $codes_url)" 
+                  exit 1;
+                elif [ $status -eq 5 ]; then
+                  echo "Only violations fail -- scan summary has errors and violations. Original code: $status (see $codes_url)" 
+                  exit 1;
+                elif [ $status -eq 4 ]; then
+                  echo "Only violations fail -- scan summary has errors but no violations. Original code: $status (see $codes_url)" 
+                  exit 0;
+                elif [ $status -eq 0 ]; then
+                  exit 0;
+                else
+                  exit $status;
+                fi
+          - task: Bash@3
+            condition: always()
+            displayName: "Checkov - Static Analysis"
+            inputs:
+              targetType: "inline"
+              script: |
+                # See 'Using docker' https://github.com/bridgecrewio/checkov#using-docker
+                # See checkov cli: https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+                docker pull bridgecrew/checkov:latest
+                docker run --rm --volume $(System.DefaultWorkingDirectory):/tf --workdir /tf bridgecrew/checkov:latest --directory /tf -o junitxml > checkov-junit.xml
+                retVal=$?
+                cat checkov-junit.xml
+                echo \n
+                echo "Checkov - Static Analysis complete. Please use 'make checkov' command to run locally for more detailed output."
+                if [ $retVal -ne 0 ]; then
+                  exit $retVal
+                fi
+          - task: PublishTestResults@2
+            condition: always()
+            displayName: "Publish JUnit results to Test Plans: Runs"
+            inputs:
+              mergeTestResults: false
+              testResultsFormat: "JUnit"
+              searchFolder: $(System.DefaultWorkingDirectory)
+              testResultsFiles: "**/*-junit.xml"
+              publishRunAttachments: true
+              testRunTitle: "Repo: $(Build.Repository.Name); Pipe: $(Build.DefinitionName); BuildId: $(Build.BuildId)"

@@ -1,0 +1,99 @@
+# YAML schema reference for Azure Pipelines: https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/?view=azure-pipelines
+
+variables:
+  terraformVersion: "latest"
+  ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+    deployment_sp: "tier1"
+    security_environment_name: nonprod
+    storage_subscription_id: "30ac17a4-af77-4069-b230-705a3c5fec46"
+    application_environment: nonprod
+    tf_path: environments/${{ variables.application_environment }}/terraform
+  ${{ else }}:
+    deployment_sp: "tier1"
+    security_environment_name: nonprod
+    storage_subscription_id: "30ac17a4-af77-4069-b230-705a3c5fec46"
+    application_environment: nonprod
+    tf_path: environments/${{ variables.application_environment }}/terraform
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+pool:
+  vmImage: "Ubuntu-latest"
+
+stages:
+  - stage: terraform_init_global
+    displayName: "Terraform init, validate, plan"
+    jobs:
+      - job: terraform_init_validate_plan
+        steps:
+          - template: templates/checkout.yaml
+          - template: templates/terraform-init.yaml
+            parameters:
+              tf_path: $(tf_path)
+              backend_type: "azurerm"
+              infra_deployment_sp: "$(deployment_sp)"
+              storage_subscription_id: $(storage_subscription_id)
+          - task: TerraformCLI@1
+            displayName: "terraform validate"
+            name: terraform_validate
+            inputs:
+              command: "validate"
+              workingDirectory: "$(System.DefaultWorkingDirectory)/$(tf_path)"
+              allowTelemetryCollection: false
+          - task: TerraformCLI@1
+            displayName: "terraform plan"
+            name: terraform_plan
+            inputs:
+              command: "plan"
+              workingDirectory: "$(System.DefaultWorkingDirectory)/$(tf_path)"
+              environmentServiceName: "$(deployment_sp)"
+              backendAzureRmSubscriptionId: $(storage_subscription_id)
+              publishPlanResults: global_changes
+              commandOptions: "-out=$(System.DefaultWorkingDirectory)/terraform.tfplan -detailed-exitcode"
+              allowTelemetryCollection: false
+            env:
+              TF_VAR_application_environment: $(application_environment)
+              TF_VAR_security_environment: $(security_environment_name)
+          - script: |
+              echo "##vso[task.setvariable variable=TERRAFORM_PLAN_HAS_CHANGES;isOutput=true]$TERRAFORM_PLAN_HAS_CHANGES"
+            displayName: "Export plan changes flag"
+            name: export_plan_has_changes
+            condition: succeeded()
+  - stage: terraform_apply_global
+    displayName: "Terraform apply"
+    dependsOn: terraform_init_global
+    # See "Stage depending on job output": https://docs.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#stage-depending-on-job-output
+    condition: |
+      and
+      (
+        in(dependencies.terraform_init_global.result, 'Succeeded'),
+        in(dependencies.terraform_init_global.outputs['terraform_init_validate_plan.export_plan_has_changes.TERRAFORM_PLAN_HAS_CHANGES'], 'true')
+      )
+    jobs:
+      - job: terraform_apply
+        steps:
+          - template: templates/checkout.yaml
+          - template: templates/terraform-init.yaml
+            parameters:
+              tf_path: $(tf_path)
+              backend_type: "azurerm"
+              infra_deployment_sp: "$(deployment_sp)"
+              storage_subscription_id: $(storage_subscription_id)
+          - task: TerraformCLI@1
+            displayName: Terraform apply
+            name: terraform_apply
+            inputs:
+              command: "apply"
+              workingDirectory: "$(System.DefaultWorkingDirectory)/$(tf_path)"
+              environmentServiceName: "$(deployment_sp)"
+              backendAzureRmSubscriptionId: $(storage_subscription_id)
+              runAzLogin: true
+              allowTelemetryCollection: false
+            env:
+              TF_VAR_application_environment: $(application_environment)
+              TF_VAR_security_environment: $(security_environment_name)
