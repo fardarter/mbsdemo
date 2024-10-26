@@ -32,3 +32,8 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+#to help rule out git from search and other tools that use .gitignore
+.git 
+
+local/
