@@ -37,3 +37,14 @@ terraform.rc
 .git 
 
 local/
+
+.step/
+
+secrets/*
+!secrets/**/.gitkeep
+!secrets/**/client1-authn-ID.enc*
+!secrets/**/client2-authn-ID.enc*
+!secrets/**/client3-authn-ID.enc*
+!secrets/**/client4-authn-ID.enc*
+!secrets/**/client5-authn-ID.enc*
+

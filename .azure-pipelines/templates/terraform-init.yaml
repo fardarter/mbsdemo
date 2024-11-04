@@ -15,6 +15,7 @@ parameters:
     default: ""
 
 steps:
+  # See issue re node version: https://github.com/JaydenMaalouf/azure-pipelines-terraform-output/issues/14
   - task: TerraformInstaller@1
     name: install_terraform
     displayName: "Install terraform (version: ${{ parameters.terraformVersion }})"

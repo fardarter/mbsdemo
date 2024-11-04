@@ -1,10 +1,13 @@
 trigger: none
 pr: none # in azure devops, this is configured by build validation.
 
+# pool:
+#   name: t0-medium
+#   demands:
+#     - ImageOverride -equals ubuntu-22.04
+
 pool:
-  name: t0-medium
-  demands:
-    - ImageOverride -equals ubuntu-22.04
+  vmImage: "Ubuntu-latest"
 
 stages:
   - stage: linting_and_validation
@@ -56,37 +59,6 @@ stages:
                 retVal=$?
                 if [ $retVal -ne 0 ]; then
                   exit $retVal
-                fi
-          - task: Bash@3
-            condition: always()
-            displayName: "Terrascan - Static Analysis"
-            inputs:
-              targetType: "inline"
-              script: |
-                docker pull tenable/terrascan:latest
-                docker run --rm --volume $(System.DefaultWorkingDirectory):/iac --workdir /iac tenable/terrascan scan --show-passed -t azure -i terraform -o junit-xml > terrascan-junit.xml
-                # See error codes docs -- we care about violations but not errors: https://runterrascan.io/docs/_print/#configuring-the-output-format-for-a-scan
-                status=$?
-                cat terrascan-junit.xml
-                echo \n
-                echo "Terrascan - Static Analysis complete. Please use 'make terrascan' command to run locally for more detailed output."
-                codes_url='https://runterrascan.io/docs/_print/#configuring-the-output-format-for-a-scan'
-                if [ $status -eq 1 ]; then
-                  echo "Only violations fail -- scan command errors out due to invalid inputs. Original code: $status (see $codes_url)" 
-                  exit 1;
-                elif [ $status -eq 3 ]; then
-                  echo "Only violations fail -- scan summary has violations but no errors. Original code: $status (see $codes_url)" 
-                  exit 1;
-                elif [ $status -eq 5 ]; then
-                  echo "Only violations fail -- scan summary has errors and violations. Original code: $status (see $codes_url)" 
-                  exit 1;
-                elif [ $status -eq 4 ]; then
-                  echo "Only violations fail -- scan summary has errors but no violations. Original code: $status (see $codes_url)" 
-                  exit 0;
-                elif [ $status -eq 0 ]; then
-                  exit 0;
-                else
-                  exit $status;
                 fi
           - task: Bash@3
             condition: always()

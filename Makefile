@@ -26,3 +26,15 @@ terrascan:
 .PHONY: fmt
 fmt:
 	terraform fmt -recursive
+
+.PHONY: step-ca
+step-ca:
+	STEPPATH=./.step step ca init --deployment-type standalone --name MBSDemoCA --dns localhost --address 127.0.0.1:443 --provisioner MBSDemoCAProvisioner --context mbsdemo
+
+.PHONY: step
+step:
+	step certificate create client1-authn-ID client1-authn-ID.pem client1-authn-ID.key --ca ./.step/authorities/mbsdemo/certs/intermediate_ca.crt --ca-key ./.step/authorities/mbsdemo/secrets/intermediate_ca_key --no-password --insecure --not-after 2400h
+	step certificate create client2-authn-ID client2-authn-ID.pem client2-authn-ID.key --ca ./.step/authorities/mbsdemo/certs/intermediate_ca.crt --ca-key ./.step/authorities/mbsdemo/secrets/intermediate_ca_key --no-password --insecure --not-after 2400h
+	step certificate create client3-authn-ID client3-authn-ID.pem client3-authn-ID.key --ca ./.step/authorities/mbsdemo/certs/intermediate_ca.crt --ca-key ./.step/authorities/mbsdemo/secrets/intermediate_ca_key --no-password --insecure --not-after 2400h
+	step certificate create client4-authn-ID client4-authn-ID.pem client4-authn-ID.key --ca ./.step/authorities/mbsdemo/certs/intermediate_ca.crt --ca-key ./.step/authorities/mbsdemo/secrets/intermediate_ca_key --no-password --insecure --not-after 2400h
+	step certificate create client5-authn-ID client5-authn-ID.pem client5-authn-ID.key --ca ./.step/authorities/mbsdemo/certs/intermediate_ca.crt --ca-key ./.step/authorities/mbsdemo/secrets/intermediate_ca_key --no-password --insecure --not-after 2400h
